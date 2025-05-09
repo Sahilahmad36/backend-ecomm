@@ -207,6 +207,25 @@ const updateStatus = async (req, res) => {
     }
 };
 
+const totalRevenue = async (req, res) => {
+    try {
+        const paidOrders = await orderModel.find({ payment: true });
+        const total = paidOrders.reduce((sum, order) => sum + order.amount, 0);
+        res.json({ success: true, totalRevenue: total });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+};
+const totalOrdersCount = async (req, res) => {
+    try {
+        const count = await orderModel.countDocuments();
+        res.json({ success: true, totalOrders: count });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+};
 export {
     placeOrder,
     placeOrderStripe,
@@ -215,5 +234,7 @@ export {
     verifyRazorpay,
     allOrders,
     userOrders,
-    updateStatus
+    updateStatus,
+    totalRevenue,
+    totalOrdersCount
 };
