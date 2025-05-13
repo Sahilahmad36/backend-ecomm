@@ -9,6 +9,7 @@ import cartRouter from './routes/cartRoute.js';
 import orderRouter from './routes/orderRoute.js';
 import footerRouter from './routes/footerRoute.js';
 import donationRouter from "./routes/donationRoute.js";
+import navigationRouter from "./routes/navigationRoutes.js"
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -24,7 +25,7 @@ app.use('/api/cart', cartRouter);
 app.use('/api/order', orderRouter);
 app.use('/api/footer', footerRouter);
 app.use('/api/donation', donationRouter);
-
+app.use('/api/navbar', navigationRouter);
 
 app.get('/',(req,res)=>{
     res.send("API is working ecommerce website")
