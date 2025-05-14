@@ -9,7 +9,10 @@ import cartRouter from './routes/cartRoute.js';
 import orderRouter from './routes/orderRoute.js';
 import footerRouter from './routes/footerRoute.js';
 import donationRouter from "./routes/donationRoute.js";
-import navigationRouter from "./routes/navigationRoutes.js"
+import navigationRouter from "./routes/navigationRoutes.js";
+import contentRoutes from "./routes/contentRoutes.js";
+import featuredRouter from "./routes/featuredRoutes.js";
+import videoRouter from "./routes/videoRoutes.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -26,6 +29,9 @@ app.use('/api/order', orderRouter);
 app.use('/api/footer', footerRouter);
 app.use('/api/donation', donationRouter);
 app.use('/api/navbar', navigationRouter);
+app.use('/api/content', contentRoutes);
+app.use('/api/featured', featuredRouter);
+app.use('/api/videos', videoRouter);
 
 app.get('/',(req,res)=>{
     res.send("API is working ecommerce website")
