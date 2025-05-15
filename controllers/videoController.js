@@ -1,78 +1,146 @@
-// controllers/videoController.js
-
+import cloudinary from 'cloudinary';
 import Video from '../models/Video.js';
-import { v2 as cloudinary } from "cloudinary";
-import fs from 'fs';
 
-// GET all videos
-export const getAllVideos = async (req, res) => {
+// Configure Cloudinary
+cloudinary.v2.config({
+  cloud_name: process.env.CLOUDINARY_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_SECRET_KEY,
+});
+
+// Upload video to Cloudinary
+export const uploadVideo = async (req, res) => {
   try {
-    const videos = await Video.find().sort({ createdAt: -1 });
-    res.status(200).json(videos);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
+    console.log('Request Body:', req.body);
+    console.log('Uploaded File:', req.file);
 
-// POST create video
-export const createVideo = async (req, res) => {
-  try {
-    const { src, title, description } = req.body;
-    let thumbnailUrl = '';
-
-    // Check if thumbnail file exists
-    if (req.file) {
-      console.log('Uploading thumbnail:', req.file.path);
-      const result = await cloudinary.uploader.upload(req.file.path, {
-        folder: "video-thumbnails"
-      });
-      thumbnailUrl = result.secure_url;
-
-      // Clean up local file after upload
-      fs.unlink(req.file.path, (err) => {
-        if (err) console.error('Failed to delete local file:', err);
-      });
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const newVideo = new Video({
-      src,
-      title,
-      description,
-      thumbnailUrl,
-    });
+    const stream = cloudinary.v2.uploader.upload_stream(
+      { resource_type: 'video', folder: 'videos' },
+      async (error, result) => {
+        if (error) {
+          console.error('Cloudinary upload error:', error);
+          return res.status(500).json({ error: 'Upload failed' });
+        }
 
-    await newVideo.save();
-    res.status(201).json(newVideo);
-  } catch (error) {
-    console.error('Create video error:', error);
-    res.status(500).json({ error: error.message });
+        const video = new Video({
+          title: req.body.title,
+          description: req.body.description,
+          videoUrl: result.secure_url,
+          cloudinaryId: result.public_id,
+        });
+
+        await video.save();
+        res.status(200).json({ message: 'Uploaded', video });
+      }
+    );
+
+    stream.end(req.file.buffer);
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
-// PUT update video
+// Get all videos
+export const getVideos = async (req, res) => {
+  try {
+    const videos = await Video.find();
+    res.status(200).json(videos);
+  } catch (err) {
+    console.error('Fetching videos error:', err);
+    res.status(500).json({ error: 'Error fetching videos' });
+  }
+};
+
+// Get a single video by ID
+export const getVideo = async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+    res.status(200).json(video);
+  } catch (err) {
+    console.error('Fetching video error:', err);
+    res.status(500).json({ error: 'Error fetching video' });
+  }
+};
+
+// Update a video
 export const updateVideo = async (req, res) => {
   try {
-    const { id } = req.params;
+    const video = await Video.findById(req.params.id);
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
 
-    const updatedVideo = await Video.findByIdAndUpdate(id, req.body, { new: true });
-    if (!updatedVideo) return res.status(404).json({ message: 'Video not found' });
+    video.title = req.body.title || video.title;
+    video.description = req.body.description || video.description;
 
-    res.status(200).json(updatedVideo);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (req.file) {
+      const result = await cloudinary.v2.uploader.upload(req.file.path, {
+        resource_type: 'video',
+        folder: 'videos',
+      });
+
+      await cloudinary.v2.uploader.destroy(video.cloudinaryId, {
+        resource_type: 'video',
+      });
+
+      video.videoUrl = result.secure_url;
+      video.cloudinaryId = result.public_id;
+    }
+
+    await video.save();
+    res.status(200).json({
+      message: 'Video updated successfully',
+      video,
+    });
+  } catch (err) {
+    console.error('Update video error:', err);
+    res.status(500).json({ error: 'Error updating video' });
   }
 };
 
-// DELETE video
+// Delete a video
 export const deleteVideo = async (req, res) => {
   try {
-    const { id } = req.params;
+    const video = await Video.findById(req.params.id);
 
-    const deletedVideo = await Video.findByIdAndDelete(id);
-    if (!deletedVideo) return res.status(404).json({ message: 'Video not found' });
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Attempt to delete from Cloudinary
+    if (video.cloudinaryId) {
+      try {
+        await cloudinary.v2.uploader.destroy(video.cloudinaryId, {
+          resource_type: 'video',
+        });
+      } catch (cloudErr) {
+        console.error('Cloudinary deletion error:', cloudErr.message);
+        // Optional: return early if Cloudinary deletion is mandatory
+      }
+    }
+
+    // Delete from MongoDB
+    await Video.deleteOne({ _id: video._id });
 
     res.status(200).json({ message: 'Video deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error('Server error in deleteVideo:', err.message);
+    res.status(500).json({ error: 'Error deleting video', details: err.message });
   }
+};
+
+export default {
+  uploadVideo,
+  getVideos,
+  getVideo,
+  updateVideo,
+  deleteVideo,
 };
