@@ -5,20 +5,16 @@ import {
   getVideos,
   getVideo,
   updateVideo,
-  deleteVideo
+  deleteVideo,
 } from '../controllers/videoController.js';
 import adminAuth from '../middleware/adminAuth.js';
 
 const router = express.Router();
 
-router.post('/upload',adminAuth, upload, uploadVideo);
-
+router.post('/upload', adminAuth, upload, uploadVideo);
 router.get('/', getVideos);
-
 router.get('/:id', getVideo);
-
-router.put('/updatevideo/:id',adminAuth, upload, updateVideo);
-
-router.delete('/deletevideo/:id',adminAuth, deleteVideo);
+router.put('/updatevideo/:id', adminAuth, upload, updateVideo);
+router.delete('/deletevideo/:id', adminAuth, deleteVideo);
 
 export default router;

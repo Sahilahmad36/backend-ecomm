@@ -1,51 +1,53 @@
 import cloudinary from 'cloudinary';
 import Video from '../models/Video.js';
 
-// Configure Cloudinary
 cloudinary.v2.config({
   cloud_name: process.env.CLOUDINARY_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_SECRET_KEY,
 });
 
-// Upload video to Cloudinary
 export const uploadVideo = async (req, res) => {
   try {
-    console.log('Request Body:', req.body);
-    console.log('Uploaded File:', req.file);
+    const videoFile = req.files?.video?.[0];
+    const thumbnailFile = req.files?.thumbnail?.[0];
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+    if (!videoFile || !thumbnailFile) {
+      return res.status(400).json({ error: 'Both video and thumbnail are required' });
     }
 
-    const stream = cloudinary.v2.uploader.upload_stream(
-      { resource_type: 'video', folder: 'videos' },
-      async (error, result) => {
-        if (error) {
-          console.error('Cloudinary upload error:', error);
-          return res.status(500).json({ error: 'Upload failed' });
-        }
+    const videoUpload = await new Promise((resolve, reject) => {
+      const stream = cloudinary.v2.uploader.upload_stream(
+        { resource_type: 'video', folder: 'videos' },
+        (error, result) => (error ? reject(error) : resolve(result))
+      );
+      stream.end(videoFile.buffer);
+    });
 
-        const video = new Video({
-          title: req.body.title,
-          description: req.body.description,
-          videoUrl: result.secure_url,
-          cloudinaryId: result.public_id,
-        });
+    const thumbnailUpload = await new Promise((resolve, reject) => {
+      const stream = cloudinary.v2.uploader.upload_stream(
+        { resource_type: 'image', folder: 'thumbnails' },
+        (error, result) => (error ? reject(error) : resolve(result))
+      );
+      stream.end(thumbnailFile.buffer);
+    });
 
-        await video.save();
-        res.status(200).json({ message: 'Uploaded', video });
-      }
-    );
+    const video = new Video({
+      title: req.body.title,
+      description: req.body.description,
+      videoUrl: videoUpload.secure_url,
+      cloudinaryId: videoUpload.public_id,
+      thumbnailUrl: thumbnailUpload.secure_url,
+    });
 
-    stream.end(req.file.buffer);
+    await video.save();
+    res.status(200).json({ message: 'Uploaded', video });
   } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 };
 
-// Get all videos
 export const getVideos = async (req, res) => {
   try {
     const videos = await Video.find();
@@ -56,7 +58,6 @@ export const getVideos = async (req, res) => {
   }
 };
 
-// Get a single video by ID
 export const getVideo = async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
@@ -70,7 +71,6 @@ export const getVideo = async (req, res) => {
   }
 };
 
-// Update a video
 export const updateVideo = async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
@@ -81,32 +81,43 @@ export const updateVideo = async (req, res) => {
     video.title = req.body.title || video.title;
     video.description = req.body.description || video.description;
 
-    if (req.file) {
-      const result = await cloudinary.v2.uploader.upload(req.file.path, {
-        resource_type: 'video',
-        folder: 'videos',
-      });
-
+    if (req.files?.video?.[0]) {
       await cloudinary.v2.uploader.destroy(video.cloudinaryId, {
         resource_type: 'video',
       });
 
-      video.videoUrl = result.secure_url;
-      video.cloudinaryId = result.public_id;
+      const newVideo = await new Promise((resolve, reject) => {
+        const stream = cloudinary.v2.uploader.upload_stream(
+          { resource_type: 'video', folder: 'videos' },
+          (err, result) => (err ? reject(err) : resolve(result))
+        );
+        stream.end(req.files.video[0].buffer);
+      });
+
+      video.videoUrl = newVideo.secure_url;
+      video.cloudinaryId = newVideo.public_id;
+    }
+
+    if (req.files?.thumbnail?.[0]) {
+      const newThumb = await new Promise((resolve, reject) => {
+        const stream = cloudinary.v2.uploader.upload_stream(
+          { resource_type: 'image', folder: 'thumbnails' },
+          (err, result) => (err ? reject(err) : resolve(result))
+        );
+        stream.end(req.files.thumbnail[0].buffer);
+      });
+
+      video.thumbnailUrl = newThumb.secure_url;
     }
 
     await video.save();
-    res.status(200).json({
-      message: 'Video updated successfully',
-      video,
-    });
+    res.status(200).json({ message: 'Video updated successfully', video });
   } catch (err) {
     console.error('Update video error:', err);
     res.status(500).json({ error: 'Error updating video' });
   }
 };
 
-// Delete a video
 export const deleteVideo = async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
@@ -115,19 +126,12 @@ export const deleteVideo = async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
-    // Attempt to delete from Cloudinary
     if (video.cloudinaryId) {
-      try {
-        await cloudinary.v2.uploader.destroy(video.cloudinaryId, {
-          resource_type: 'video',
-        });
-      } catch (cloudErr) {
-        console.error('Cloudinary deletion error:', cloudErr.message);
-        // Optional: return early if Cloudinary deletion is mandatory
-      }
+      await cloudinary.v2.uploader.destroy(video.cloudinaryId, {
+        resource_type: 'video',
+      });
     }
 
-    // Delete from MongoDB
     await Video.deleteOne({ _id: video._id });
 
     res.status(200).json({ message: 'Video deleted successfully' });
